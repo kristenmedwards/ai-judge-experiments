@@ -83,6 +83,28 @@ python -m car_judge.run_experiment \
 Output is a tidy CSV: one row per (rater × target car × dimension × judge) with
 the predicted rating, the true held-out rating, and the run configuration.
 
+## Context-size sweep + statistical evaluation
+
+To sweep context sizes (e.g. N = 0, 5, 10, 15) with hold-out testing and then
+run the full statistical comparison against human ratings (weighted kappa,
+ICC, Spearman, MAE/RMSE, Bland–Altman, TOST equivalence, paired Wilcoxon):
+
+```bash
+python -m car_judge.run_context_sweep \
+  --data ".../Prolific.csv" --image-root ".../chunks" \
+  --raters 5 --context-sizes 0 5 10 15 --holdout-mode fixed \
+  --test-size 8 --repeats 3 --out outputs/sweep_predictions.csv
+
+python -m evaluation.evaluate_predictions \
+  --predictions outputs/sweep_predictions.csv \
+  --reference rater --data ".../Prolific.csv" \
+  --out-dir evaluation/outputs/sweep_rater
+```
+
+See [evaluation/README.md](evaluation/README.md) for hold-out modes
+(fixed / hold-multiple-out / hold-one-out), the `car_mean` consensus
+reference, and how to read the outputs.
+
 ## Design notes (from the experiment plan)
 
 - **Fixed held-out test set per rater.** For each rater a `--test-size` set of
@@ -106,5 +128,9 @@ car_judge/
   judges.py          NoContextJudge, InContextJudge
   metrics.py         MAE / exact / within-1 (pure python)
   run_experiment.py  CLI driver
+  run_context_sweep.py  sweep context sizes with fixed/remainder/loo hold-out
+evaluation/
+  stats.py           kappa, ICC(2,1), TOST, Bland-Altman, bootstrap (numpy/scipy)
+  evaluate_predictions.py  statistical evaluation CLI (see evaluation/README.md)
 tests/               offline unit tests (no server needed)
 ```
