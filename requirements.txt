@@ -1,0 +1,3 @@
+# Client dependencies. The VLM itself is served elsewhere (vLLM).
+openai>=1.30.0
+# nothing else is required to run --dry-run or the loader; stdlib csv is used.
