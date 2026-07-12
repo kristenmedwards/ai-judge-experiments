@@ -4,7 +4,7 @@ Usage (env vars, same names the harness uses):
 
     export VLM_BASE_URL="http://<gpu-host>:8000/v1"
     export VLM_API_KEY="EMPTY"               # only if they set --api-key
-    export VLM_MODEL="Qwen/Qwen2.5-VL-7B-Instruct"
+    export VLM_MODEL="Qwen/Qwen3.5-9B"
     python scripts/ping_vlm.py               # text-only ping + model list
     python scripts/ping_vlm.py --image       # also send a 1x1 image (vision path)
 

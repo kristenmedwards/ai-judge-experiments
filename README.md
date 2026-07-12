@@ -1,7 +1,7 @@
 # AI Judge Experiments — Personalized VLM Car-Aesthetics Judges
 
 Early experiment harness for the **AI Judges++** paper. It queries an open
-**Qwen vision-language model** (served elsewhere via vLLM's OpenAI-compatible
+**Qwen3.5 vision-language model** (served elsewhere via vLLM's OpenAI-compatible
 endpoint) to predict human aesthetic ratings of cars, in two conditions:
 
 1. **No-context judge** — 0-shot. The model sees only the target car image and
@@ -41,10 +41,17 @@ pip install -r requirements.txt
 
 ## Serving the model (reference, runs on the GPU box, not here)
 
+Qwen3.5 is natively multimodal — vision is built into the base checkpoint, so
+there is no separate `-VL` variant to serve.
+
 ```bash
-vllm serve Qwen/Qwen2.5-VL-7B-Instruct \
+# --limit-mm-per-prompt : max_shots + 1; ICL sends many images
+# --reasoning-parser    : only needed for --enable-thinking runs, so that the
+#                         <think> block is split off instead of prefixing the JSON
+vllm serve Qwen/Qwen3.5-9B \
   --host 0.0.0.0 --port 8000 \
-  --limit-mm-per-prompt image=21          # max_shots + 1; ICL sends many images
+  --limit-mm-per-prompt image=21 \
+  --reasoning-parser qwen3
 ```
 
 Then point the client at it (OpenAI-compatible API):
@@ -52,7 +59,7 @@ Then point the client at it (OpenAI-compatible API):
 ```bash
 export VLM_BASE_URL="http://<gpu-host>:8000/v1"
 export VLM_API_KEY="EMPTY"                # vLLM ignores the key by default
-export VLM_MODEL="Qwen/Qwen2.5-VL-7B-Instruct"
+export VLM_MODEL="Qwen/Qwen3.5-9B"
 ```
 
 ## Run
@@ -113,8 +120,20 @@ reference, and how to read the outputs.
 - **Image-before-text in each demonstration** (per Qin et al.): each exemplar is
   an image part followed by its ratings text.
 - **Temperature 0** by default for reproducibility.
+- **The no-context judge rates each car once.** It is 0-shot — the prompt is the
+  rubric plus the target image, with no rater identity — so its prediction is a
+  function of the image alone and cannot differ between two raters who happen to
+  share a car. Repeat targets are served from cache. The predictions CSV still
+  carries one row per (rater × car × dimension), scored against *that* rater's
+  ratings, so per-rater metrics are unaffected. The in-context judge deliberately
+  does **not** cache: its ratings are conditioned on the rater's exemplars, so the
+  same car legitimately gets a different prediction per rater.
 - **`--enable-thinking`** toggles Qwen's reasoning mode (for the E2 reasoning
-  lever); off by default.
+  lever); off by default. Note this is a real lever on Qwen3.5 — the old
+  Qwen2.5-VL chat template ignored the flag, so any pre-Qwen3.5 "thinking" run
+  was in fact a non-thinking run and is not comparable. Reasoning also spends
+  the same budget as the answer, so raise `max_tokens` (512 by default) when
+  enabling it, or the JSON can get truncated away.
 
 ## Layout
 
@@ -122,7 +141,7 @@ reference, and how to read the outputs.
 car_judge/
   config.py          run configuration dataclass (+ env defaults)
   data.py            Prolific export loader + car-image index + splits
-  client.py          Qwen VLM client (openai SDK -> vLLM endpoint)
+  client.py          Qwen3.5 VLM client (openai SDK -> vLLM endpoint)
   prompts.py         rubric system prompt + base64 message builders
   parsing.py         robust numeric-rating JSON parser
   judges.py          NoContextJudge, InContextJudge
