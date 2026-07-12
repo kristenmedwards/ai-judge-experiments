@@ -17,6 +17,20 @@ def _clamp(v: int) -> int:
     return max(SCALE_MIN, min(SCALE_MAX, v))
 
 
+def _strip_reasoning(text: str) -> str:
+    """Drop Qwen3.5 ``<think>`` spans so only the answer is parsed.
+
+    With ``enable_thinking``, vLLM only splits reasoning into a separate
+    ``reasoning_content`` field when it is served with a reasoning parser.
+    Without one, the ``<think>`` block arrives inline ahead of the JSON, and its
+    prose can contain braces that fool the blob scanner. A block left unclosed
+    (reasoning ran into ``max_tokens``) means the answer never arrived, so drop
+    the remainder and let the caller report a missing rating.
+    """
+    text = re.sub(r"<think>.*?</think>", " ", text, flags=re.DOTALL)
+    return re.sub(r"<think>.*\Z", " ", text, flags=re.DOTALL)
+
+
 def _extract_json_blob(text: str) -> Optional[dict]:
     """Find the first {...} block that parses as a JSON object."""
     # Strip common markdown fences first.
@@ -59,6 +73,7 @@ def parse_ratings(text: str, strict: bool = False) -> Dict[str, int]:
     """
     if text is None:
         text = ""
+    text = _strip_reasoning(text)
 
     result: Dict[str, int] = {}
     blob = _extract_json_blob(text)

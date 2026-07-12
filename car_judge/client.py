@@ -1,4 +1,4 @@
-"""Client for a Qwen-VL model served via vLLM's OpenAI-compatible endpoint.
+"""Client for a Qwen3.5 VLM served via vLLM's OpenAI-compatible endpoint.
 
 The model is assumed to run elsewhere (a GPU box). This wraps the stock ``openai``
 SDK, pointing ``base_url`` at that server. ``dry_run=True`` never contacts a

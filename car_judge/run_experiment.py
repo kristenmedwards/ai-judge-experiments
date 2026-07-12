@@ -13,7 +13,7 @@ Live run against a served model:
 
     python -m car_judge.run_experiment \
       --data ".../Prolific.csv" --image-root ".../chunks" \
-      --base-url http://gpu:8000/v1 --model Qwen/Qwen2.5-VL-7B-Instruct \
+      --base-url http://gpu:8000/v1 --model Qwen/Qwen3.5-9B \
       --raters 5 --test-size 8 --context-size 10 --out outputs/predictions.csv
 """
 
@@ -21,9 +21,12 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import os
 import sys
+import time
 from collections import defaultdict
+from datetime import datetime
 from typing import Dict, List
 
 from .config import RunConfig, DIMENSIONS
@@ -57,7 +60,9 @@ def parse_args(argv: List[str]) -> RunConfig:
 
     p.add_argument("--dry-run", action="store_true",
                    help="build requests but do not contact a server")
-    p.add_argument("--out", default="outputs/predictions.csv")
+    p.add_argument("--out", default=None,
+                   help="predictions CSV path; if omitted, an organized run "
+                        "folder is auto-generated under outputs/")
     a = p.parse_args(argv)
 
     kw = dict(
@@ -83,6 +88,49 @@ def parse_args(argv: List[str]) -> RunConfig:
     if a.model:
         kw["model"] = a.model
     return RunConfig(**kw)
+
+
+def build_out_path(cfg: RunConfig) -> str:
+    """Auto-generate an organized, non-colliding predictions path from the config.
+
+    Layout: outputs/<judges>__<timestamp>__<model>__<params>/predictions.csv
+    e.g.    outputs/no_context__2026-07-11T14-30-22__Qwen3.5-9B__r5_t8_seed0/
+    Parameters that change results are encoded in the folder name so runs are
+    sortable by date and greppable by parameter.
+    """
+    ts = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
+    model = cfg.model.split("/")[-1]
+    judges = "+".join(cfg.judges)
+    parts = [f"r{cfg.n_raters}", f"t{cfg.test_size}"]
+    if "in_context" in cfg.judges:
+        parts.append(f"c{cfg.context_size}")
+    if cfg.enable_thinking:
+        parts.append("think")
+    parts.append(f"seed{cfg.split_seed}")
+    slug = f"{judges}__{ts}__{model}__{'_'.join(parts)}"
+    return os.path.join("outputs", slug, "predictions.csv")
+
+
+def write_run_info(path: str, cfg: RunConfig, rater_ids: List[str],
+                   duration_s: float, n_rows: int,
+                   scores: Dict[str, Dict[str, dict]]) -> None:
+    """Save a run_info.json next to the predictions with the key run metadata."""
+    info = {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "duration_seconds": round(duration_s, 1),
+        "judges": cfg.judges,
+        "model": cfg.model,
+        "n_raters": cfg.n_raters,
+        "raters": rater_ids,
+        "test_size": cfg.test_size,
+        "context_size": cfg.context_size if "in_context" in cfg.judges else None,
+        "split_seed": cfg.split_seed,
+        "enable_thinking": cfg.enable_thinking,
+        "n_prediction_rows": n_rows,
+        "scores": scores,
+    }
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(info, fh, indent=2)
 
 
 def write_predictions(path: str, rows: List[dict]) -> None:
@@ -124,6 +172,7 @@ def _prediction_rows(pred: Prediction, rater_id: str, truth: Dict[str, int],
 
 def main(argv: List[str] | None = None) -> int:
     cfg = parse_args(sys.argv[1:] if argv is None else argv)
+    run_start = time.time()
 
     print(f"[load] images from {cfg.image_root}")
     image_index = datamod.build_image_index(cfg.image_root)
@@ -170,12 +219,17 @@ def main(argv: List[str] | None = None) -> int:
                     pred = judge.predict(target)
                 max_images_seen = max(max_images_seen, pred.n_images)
 
-                if cfg.dry_run:
+                if pred.from_cache:
+                    print(f"  [hit] {name:10s} target={target} "
+                          f"-> reused (already rated; 0-shot is rater-independent)")
+                elif cfg.dry_run:
                     print(f"  [dry] {name:10s} target={target} "
                           f"images={pred.n_images} "
                           f"(system+user turns={len(pred.messages)})")
                 else:
                     print(f"  [got] {name:10s} target={target} -> {pred.predicted}")
+
+                if not cfg.dry_run:
                     for dim in DIMENSIONS:
                         pv, tv = pred.predicted.get(dim), truth.get(dim)
                         if pv is not None and tv is not None:
@@ -185,6 +239,12 @@ def main(argv: List[str] | None = None) -> int:
                     _prediction_rows(pred, rater.response_id, truth, car_name,
                                      cfg.enable_thinking))
 
+    nc = judges.get("no_context")
+    if nc is not None:
+        pairs = nc.n_unique_cars + nc.n_cache_hits
+        print(f"\n[cache] no_context: {nc.n_unique_cars} cars rated for "
+              f"{pairs} rater-car pairs ({nc.n_cache_hits} repeats reused).")
+
     if cfg.dry_run:
         need = max_images_seen
         print(f"\n[dry ] max images in one request = {need}. "
@@ -192,21 +252,33 @@ def main(argv: List[str] | None = None) -> int:
         print("[dry ] no predictions written (dry run).")
         return 0
 
+    if cfg.out_path is None:
+        cfg.out_path = build_out_path(cfg)
     write_predictions(cfg.out_path, all_rows)
+    duration = time.time() - run_start
     print(f"\n[save] {len(all_rows)} rows -> {cfg.out_path}")
 
     print("\n[score] quick summary (true vs predicted):")
+    scores: Dict[str, Dict[str, dict]] = {}
     for name in cfg.judges:
+        scores[name] = {}
         flat = []
         for dim in DIMENSIONS:
             recs = score_bucket.get((name, dim), [])
             flat += recs
             s = metricsmod.summarize(recs)
+            scores[name][dim] = s
             print(f"  {name:10s} {dim:10s} n={s['n']:3d} "
                   f"MAE={s['mae']:.3f} within1={s['within1']:.3f}")
         s = metricsmod.summarize(flat)
+        scores[name]["ALL"] = s
         print(f"  {name:10s} {'ALL':10s} n={s['n']:3d} "
               f"MAE={s['mae']:.3f} within1={s['within1']:.3f}")
+
+    info_path = os.path.join(os.path.dirname(cfg.out_path), "run_info.json")
+    write_run_info(info_path, cfg, [r.response_id for r in raters],
+                   duration, len(all_rows), scores)
+    print(f"\n[done] run took {duration:.1f}s; metadata -> {info_path}")
     return 0
 
 

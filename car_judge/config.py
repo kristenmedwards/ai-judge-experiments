@@ -27,7 +27,7 @@ class RunConfig:
     # --- model / endpoint (served elsewhere via vLLM OpenAI-compatible API) ---
     base_url: str = field(default_factory=lambda: os.environ.get("VLM_BASE_URL", "http://localhost:8000/v1"))
     api_key: str = field(default_factory=lambda: os.environ.get("VLM_API_KEY", "EMPTY"))
-    model: str = field(default_factory=lambda: os.environ.get("VLM_MODEL", "Qwen/Qwen2.5-VL-7B-Instruct"))
+    model: str = field(default_factory=lambda: os.environ.get("VLM_MODEL", "Qwen/Qwen3.5-9B"))
     temperature: float = 0.0
     max_tokens: int = 512
     seed: int | None = 0            # request-level seed for reproducibility

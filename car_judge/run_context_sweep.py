@@ -35,7 +35,7 @@ Live sweep:
 
     python -m car_judge.run_context_sweep \
       --data ".../Prolific.csv" --image-root ".../chunks" \
-      --base-url http://gpu:8000/v1 --model Qwen/Qwen2.5-VL-7B-Instruct \
+      --base-url http://gpu:8000/v1 --model Qwen/Qwen3.5-9B \
       --raters 5 --context-sizes 0 5 10 15 --holdout-mode fixed \
       --test-size 8 --repeats 3 --out outputs/sweep_predictions.csv
 """
@@ -242,8 +242,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     all_rows: List[dict] = []
     n_requests = 0
     max_images = 0
-    # 0-shot predictions depend only on the target image -> predict once.
-    zero_shot_cache: Dict[str, Prediction] = {}
+    # NoContextJudge caches internally: 0-shot depends only on the target image.
     score_bucket: Dict[tuple, list] = defaultdict(list)
 
     for rater in raters:
@@ -256,14 +255,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             for target in targets:
                 truth = rater.ratings[target]
                 if n == 0:
-                    if target in zero_shot_cache:
-                        pred = zero_shot_cache[target]
-                    else:
-                        pred = judges["no_context"].predict(target)
-                        zero_shot_cache[target] = pred
-                        n_requests += 1
+                    pred = judges["no_context"].predict(target)
                 else:
                     pred = judges["in_context"].predict(target, context)
+                if not pred.from_cache:
                     n_requests += 1
                 max_images = max(max_images, pred.n_images)
 

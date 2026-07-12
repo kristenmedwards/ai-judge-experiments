@@ -17,14 +17,15 @@ from typing import Dict, List
 
 from .config import DIMENSIONS, SCALE_MIN, SCALE_MAX
 
-SYSTEM_RUBRIC = f"""You are rating the visual design of cars. Each car is shown as a clean isometric render.
+SYSTEM_RUBRIC = f"""You are shown an image of a car, presented as a clean isometric render. Answer the following two questions using an integer scale from {SCALE_MIN} to {SCALE_MAX}.
 
-Rate the car on these five dimensions, each on an integer scale from {SCALE_MIN} to {SCALE_MAX}:
-- sporty: how sporty / athletic the car looks ({SCALE_MIN} = not at all, {SCALE_MAX} = extremely).
-- luxurious: how luxurious / premium the car looks ({SCALE_MIN} = not at all, {SCALE_MAX} = extremely).
-- modern: how modern / contemporary the car looks ({SCALE_MIN} = not at all, {SCALE_MAX} = extremely).
-- rugged: how rugged / tough the car looks ({SCALE_MIN} = not at all, {SCALE_MAX} = extremely).
-- preference: how much you like this car overall ({SCALE_MIN} = strongly dislike, {SCALE_MAX} = strongly like).
+Based on the image shown, how well does this car fit each of the following descriptions? Rate each description from {SCALE_MIN} (Not at all) to {SCALE_MAX} (Very much):
+- sporty
+- luxurious
+- modern
+- rugged
+
+Based on the image shown, how much do you like this car? Rate from {SCALE_MIN} (Dislike a great deal) to {SCALE_MAX} (Like a great deal); report this as "preference".
 
 Respond with ONLY a JSON object, no prose, no markdown fences, exactly these keys:
 {{"sporty": <int>, "luxurious": <int>, "modern": <int>, "rugged": <int>, "preference": <int>}}
@@ -66,7 +67,7 @@ def build_no_context_messages(target_path: str) -> List[dict]:
     return [
         {"role": "system", "content": SYSTEM_RUBRIC},
         {"role": "user", "content": [
-            _text_part("Rate this car. Respond with the JSON object only."),
+            _text_part("Rate this car by answering both questions above. Respond with the JSON object only."),
             _image_part(encode_image(target_path)),
         ]},
     ]

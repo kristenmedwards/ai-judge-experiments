@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Dict, List, Optional, Tuple
 
 from . import prompts
@@ -21,6 +21,7 @@ class Prediction:
     context_images: List[str] = field(default_factory=list)
     dry_run: bool = False
     messages: Optional[List[dict]] = None  # kept only on dry run for inspection
+    from_cache: bool = False  # reused 0-shot prediction; no request was sent
 
 
 class BaseJudge:
@@ -55,11 +56,44 @@ class BaseJudge:
 
 
 class NoContextJudge(BaseJudge):
+    """0-shot judge. Rates each car exactly once.
+
+    The prompt is the rubric plus the target image — no rater identity, no
+    exemplars — so the prediction is a function of the image alone and cannot
+    differ between two raters who happen to share a car. Repeat targets are
+    therefore served from cache instead of re-querying the model.
+
+    This is deliberately *not* done for :class:`InContextJudge`: its ratings are
+    conditioned on that rater's exemplars, so the same car genuinely does get a
+    different prediction per rater and must be re-queried.
+
+    The cache assumes deterministic decoding, which holds at the default
+    ``temperature=0``. Above that, a repeat car reuses the first sample rather
+    than drawing a fresh one.
+    """
+
     name = "no_context"
 
+    def __init__(self, client: QwenVLMClient, image_index: Dict[str, str]):
+        super().__init__(client, image_index)
+        self._cache: Dict[str, Prediction] = {}
+        self.n_cache_hits = 0
+
+    @property
+    def n_unique_cars(self) -> int:
+        """Distinct cars actually sent to the model."""
+        return len(self._cache)
+
     def predict(self, target_image: str) -> Prediction:
+        cached = self._cache.get(target_image)
+        if cached is not None:
+            self.n_cache_hits += 1
+            # Copy, so the flag never leaks back onto the stored prediction.
+            return replace(cached, from_cache=True)
         messages = prompts.build_no_context_messages(self._path(target_image))
-        return self._run(messages, target_image, n_context=0, context_images=[])
+        pred = self._run(messages, target_image, n_context=0, context_images=[])
+        self._cache[target_image] = pred
+        return pred
 
 
 class InContextJudge(BaseJudge):
