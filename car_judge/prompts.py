@@ -17,7 +17,7 @@ from typing import Dict, List
 
 from .config import DIMENSIONS, SCALE_MIN, SCALE_MAX
 
-SYSTEM_RUBRIC = f"""You are shown an image of a car, presented as a clean isometric render. Answer the following two questions using an integer scale from {SCALE_MIN} to {SCALE_MAX}.
+SYSTEM_RUBRIC = f"""You are shown an image of a hypothetical car, presented as a clean isometric render. Answer the following two questions using an integer scale from {SCALE_MIN} to {SCALE_MAX}.
 
 Based on the image shown, how well does this car fit each of the following descriptions? Rate each description from {SCALE_MIN} (Not at all) to {SCALE_MAX} (Very much):
 - sporty
@@ -105,3 +105,26 @@ def count_images(messages: List[dict]) -> int:
         if isinstance(c, list):
             n += sum(1 for p in c if p.get("type") == "image_url")
     return n
+
+if __name__ == "__main__":
+    import copy, json
+    def print_prompt(messages, keep=40):
+        view = copy.deepcopy(messages)
+        for m in view:
+            c = m["content"]
+            if isinstance(c, list):
+                for p in c:
+                    if p.get("type") == "image_url":
+                        u = p["image_url"]["url"]
+                        p["image_url"]["url"] = u[:keep] + f"...<{len(u)} chars, img>"
+        print(json.dumps(view, indent=2))
+
+    IMG = "../Ai_judges_plus/data/output/even_style_sampling/selected_2000_isometric_upload_chunks_renamed/chunk_01"
+    exemplars = [
+        (f"{IMG}/car_{i}.png", {"sporty": 3, "luxurious": 3, "modern": 4, "rugged": 2, "preference": 4})
+        for i in range(1, 6)          # 5 context examples
+    ]
+    target = f"{IMG}/car_100.png"
+
+    msgs = build_in_context_messages(exemplars, target)
+    print_prompt(msgs)

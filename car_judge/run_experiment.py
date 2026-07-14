@@ -57,6 +57,9 @@ def parse_args(argv: List[str]) -> RunConfig:
     p.add_argument("--test-size", type=int, default=8, help="held-out cars per rater")
     p.add_argument("--context-size", type=int, default=10, help="exemplars for in_context")
     p.add_argument("--split-seed", type=int, default=0)
+    p.add_argument("--include-anchors", action="store_true",
+                   help="include the shared anchor cars as eligible context/test "
+                        "cars (default: excluded, kept for inter-rater agreement)")
 
     p.add_argument("--dry-run", action="store_true",
                    help="build requests but do not contact a server")
@@ -78,6 +81,7 @@ def parse_args(argv: List[str]) -> RunConfig:
         test_size=a.test_size,
         context_size=a.context_size,
         split_seed=a.split_seed,
+        include_anchors_in_pool=a.include_anchors,
         dry_run=a.dry_run,
         out_path=a.out,
     )

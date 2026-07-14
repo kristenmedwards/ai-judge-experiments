@@ -41,7 +41,10 @@ class RunConfig:
     test_size: int = 8              # fixed held-out cars per rater
     context_size: int = 10          # exemplars for the in-context judge
     split_seed: int = 0             # seed for held-out / context sampling
-    include_anchors_in_pool: bool = False  # keep the 2 repeated anchors out by default
+    # The 4 anchor cars are rated by every participant, so they carry the
+    # inter-rater agreement ceiling. Kept out of each rater's context pool and
+    # held-out set by default so they stay a clean reference.
+    include_anchors_in_pool: bool = False
 
     # --- run control ---
     dry_run: bool = False

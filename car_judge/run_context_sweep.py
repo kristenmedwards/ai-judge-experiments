@@ -89,6 +89,9 @@ def parse_args(argv: List[str]) -> argparse.Namespace:
     p.add_argument("--repeats", type=int, default=1,
                    help="independent context draws per (rater, size)")
     p.add_argument("--split-seed", type=int, default=0)
+    p.add_argument("--include-anchors", action="store_true",
+                   help="include the shared anchor cars as eligible context/test "
+                        "cars (default: excluded, kept for inter-rater agreement)")
     p.add_argument("--max-targets", type=int, default=None,
                    help="cap test targets per (rater, size, repeat); mainly to "
                         "keep loo/remainder sweeps affordable")
@@ -129,8 +132,10 @@ def make_run_config(a: argparse.Namespace) -> RunConfig:
 Condition = Tuple[int, int, List[str], List[str]]
 
 
-def _eligible_cars(rater: datamod.Rater) -> List[str]:
-    cars = [c for c in rater.fully_rated_cars() if c not in rater.anchor_images]
+def _eligible_cars(rater: datamod.Rater, include_anchors: bool = False) -> List[str]:
+    cars = rater.fully_rated_cars()
+    if not include_anchors:
+        cars = [c for c in cars if c not in rater.anchor_images]
     return sorted(cars)
 
 
@@ -142,15 +147,17 @@ def iter_conditions(
     test_size: int,
     split_seed: int,
     max_targets: Optional[int],
+    include_anchors: bool = False,
 ) -> Iterator[Condition]:
-    cars = _eligible_cars(rater)
+    cars = _eligible_cars(rater, include_anchors)
     rid = rater.response_id
 
     def cap(targets: List[str]) -> List[str]:
         return targets[:max_targets] if max_targets else targets
 
     if mode == "fixed":
-        split = datamod.make_split(rater, test_size=test_size, split_seed=split_seed)
+        split = datamod.make_split(rater, test_size=test_size, split_seed=split_seed,
+                                   include_anchors_in_pool=include_anchors)
         for n in context_sizes:
             # 0-shot doesn't depend on the draw, so one repeat suffices.
             for r in range(1 if n == 0 else repeats):
@@ -246,11 +253,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     score_bucket: Dict[tuple, list] = defaultdict(list)
 
     for rater in raters:
-        n_eligible = len(_eligible_cars(rater))
+        n_eligible = len(_eligible_cars(rater, a.include_anchors))
         print(f"\n[rater] {rater.response_id}: {n_eligible} eligible cars")
         for n, r, ctx_imgs, targets in iter_conditions(
                 rater, a.holdout_mode, a.context_sizes, a.repeats,
-                a.test_size, a.split_seed, a.max_targets):
+                a.test_size, a.split_seed, a.max_targets, a.include_anchors):
             context = [(img, rater.ratings[img]) for img in ctx_imgs]
             for target in targets:
                 truth = rater.ratings[target]

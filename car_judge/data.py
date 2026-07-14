@@ -11,7 +11,8 @@ dimension, e.g.:
     "... how well does this car fit ...? - car_1.png - Sporty"
     "... how much do you like this car? - car_1.png - How much do you like this car?"
 
-That makes the loader robust to the four-block layout and to the anchor repeats.
+That makes the loader robust to the four-block layout and to the shared anchor
+blocks.
 """
 
 from __future__ import annotations
