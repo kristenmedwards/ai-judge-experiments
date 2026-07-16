@@ -17,7 +17,7 @@ from typing import Dict, List
 
 from .config import DIMENSIONS, SCALE_MIN, SCALE_MAX
 
-SYSTEM_RUBRIC = f"""You are shown an image of a hypothetical car, presented as a clean isometric render. Answer the following two questions using an integer scale from {SCALE_MIN} to {SCALE_MAX}.
+SYSTEM_RUBRIC = f"""You are shown an image of a hypothetical car, presented as an isometric render. Answer the following two questions using an integer scale from {SCALE_MIN} to {SCALE_MAX}.
 
 Based on the image shown, how well does this car fit each of the following descriptions? Rate each description from {SCALE_MIN} (Not at all) to {SCALE_MAX} (Very much):
 - sporty
