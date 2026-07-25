@@ -1,9 +1,10 @@
-# Client dependencies. The VLM itself is served elsewhere (vLLM).
-openai>=1.30.0
-# nothing else is required to run --dry-run or the loader; stdlib csv is used.
+# Client dependencies for the AI-judge harness.
+openai>=1.30.0          # OpenAI (and OpenAI-compatible) chat client
+python-dotenv>=1.0.0    # load OPENAI_* from a git-ignored .env
+pandas>=2.0             # merged long-csv loader
+Pillow>=10.0            # lightweight image features for rag_image context selection
 
-# Evaluation pipeline (evaluation/evaluate_predictions.py) only:
+# Evaluation pipeline (evaluation/evaluate_predictions.py) also uses:
 numpy
-pandas
 scipy
 matplotlib

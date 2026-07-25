@@ -112,6 +112,101 @@ See [evaluation/README.md](evaluation/README.md) for hold-out modes
 (fixed / hold-multiple-out / hold-one-out), the `car_mean` consensus
 reference, and how to read the outputs.
 
+## Personalized-judge autoresearch loop (GPT, inner + outer loop)
+
+The newer harness learns to match **one individual rater's** ratings and
+iteratively improves the judge, in the style of Karpathy's `autoresearch`. It
+uses the merged long csv (`car_ratings_long_..._with_color_and_Q23.csv`), which
+carries each rater's demographics, Q23 free-text, owned brands/body-styles, and
+Big Five — so the judge can be personalized.
+
+- **Baseline** — `JudgeConfig(n_context=0)`: the model sees only the target image
+  and the rubric and returns the five ratings.
+- **Inner loop** (`car_judge/inner_loop.py`) — score one `JudgeConfig` against
+  real raters. Fixed held-out set per rater; predict each held-out car from that
+  rater's *other* cars + enabled side-info; report **overall MAE** (macro-averaged
+  across raters so each person counts equally) plus per-dimension MAE and within-1.
+- **Outer loop** (agent-driven, see `judge_program.md`) — edit `judge_config.py`
+  (the one editable artifact, like autoresearch's `train.py`), rerun, and keep the
+  change only if MAE dropped. Every run appends a row to `results.tsv`.
+
+### Keys — never pasted, always from env / .env
+
+```bash
+cp .env.example .env            # then edit: OPENAI_API_KEY=... and OPENAI_MODEL=gpt-5.6
+```
+
+`.env` is git-ignored; the key stays on your machine. `OPENAI_BASE_URL` optionally
+retargets Azure / vLLM / a proxy. Offline modes need no key at all.
+
+### Run
+
+```bash
+# offline, free, deterministic (validate any config end-to-end):
+python run_autojudge.py --data ../car_ratings_long_..._Q23.csv \
+  --image-root ../selected_2000_isometric_upload_chunks_renamed \
+  --raters 10 --test-size 20 --mock
+
+# dry-run: build every request, size images, no server:
+python run_autojudge.py --data <long.csv> --image-root <chunks> --dry-run
+
+# live (after filling .env): one experiment round -> results.tsv
+python run_autojudge.py --data <long.csv> --image-root <chunks> \
+  --raters 25 --test-size 20
+```
+
+Then follow `judge_program.md`: change one lever in `judge_config.py`, rerun,
+`git commit` if MAE improved (keep) or `git checkout judge_config.py` (revert).
+
+### RAG context via CLIP (one-time index build)
+
+`context_strategy="rag_clip"` selects context cars nearest the target in CLIP
+space, from `data/clip_embeddings.npy` (18,053×768 over the full pool). Build the
+per-car index once — it joins the embeddings to the 2,000 cars via
+`clip_dataset_map.csv` (the row→image map saved with the embeddings) and
+`car_name_mapping.csv`:
+
+```bash
+python scripts/build_clip_car_index.py \
+  --embeddings data/clip_embeddings.npy \
+  --map <path>/clip_dataset_map.csv \
+  --car-mapping ../selected_2000_isometric_upload_chunks_renamed/car_name_mapping.csv \
+  --out data/car_clip_embeddings.npz
+```
+
+All 1,302 rated cars are in the mapping, so coverage should be complete. Until the
+index exists, `rag_clip` falls back to a lightweight pixel feature (`rag_image`).
+
+### Automated sweep — iterate until MAE < target
+
+`sweep_autojudge.py` runs the whole ladder by itself (no per-round editing): it
+greedily searches one lever at a time, carries the best forward, logs every run to
+`results.tsv`, and **stops as soon as the best overall MAE drops below
+`--target-mae`** (default 1.0). `--keep-going` adds a randomized combination search
+after the ladder; `--max-experiments` is a hard safety cap so it can't loop or
+spend forever.
+
+```bash
+# validate the sweep mechanics FREE first:
+python sweep_autojudge.py --data ../car_ratings_long_..._Q23.csv \
+  --image-root ../selected_2000_isometric_upload_chunks_renamed \
+  --raters 20 --test-size 20 --target-mae 1.0 --mock
+
+# live sweep until MAE < 1.0 (or the cap), best config -> best_judge_config.json:
+python sweep_autojudge.py --data <long.csv> --image-root <chunks> \
+  --raters 20 --test-size 20 --target-mae 1.0 --keep-going --max-experiments 30
+```
+
+Cost ≈ `raters × test_size` model calls per experiment (each sending `1 + n_context`
+images), so a 30-experiment live sweep at 20×20 is ~240k image inputs — mock first.
+
+### JudgeConfig levers (what the outer loop mutates)
+
+`n_context` · `context_strategy` (random / first / diverse / rag_clip /
+rag_image / rag_profile) · `context_order` · `include_demographics` (+ `profile_fields`) ·
+`include_q23` · `include_owned` · `prompt_variant` (default / concise / persona) ·
+`extra_instructions` · `temperature`.
+
 ## Design notes (from the experiment plan)
 
 - **Fixed held-out test set per rater.** For each rater a `--test-size` set of
@@ -139,17 +234,22 @@ reference, and how to read the outputs.
 
 ```
 car_judge/
-  config.py          run configuration dataclass (+ env defaults)
+  config.py          RunConfig + JudgeConfig (the editable-judge dataclass)
+  env.py             OpenAI creds from env / .env (key never hard-coded)
   data.py            Prolific export loader + car-image index + splits
-  client.py          Qwen3.5 VLM client (openai SDK -> vLLM endpoint)
-  prompts.py         rubric system prompt + base64 message builders
+  long_data.py       merged long-csv loader (ratings + demographics + Q23 + owned)
+  client.py          OpenAI-compatible client (+ dry-run + deterministic mock)
+  prompts.py         rubric + config-driven message builder (persona/Q23/owned)
+  context_selection.py  context strategies: random/first/diverse/rag_profile/rag_image
+  personalized_judge.py JudgeConfig-driven judge (baseline .. full personalization)
+  inner_loop.py      score a JudgeConfig -> overall MAE across raters/metrics
   parsing.py         robust numeric-rating JSON parser
-  judges.py          NoContextJudge, InContextJudge
+  judges.py          original NoContextJudge / InContextJudge (Qwen path)
   metrics.py         MAE / exact / within-1 (pure python)
-  run_experiment.py  CLI driver
-  run_context_sweep.py  sweep context sizes with fixed/remainder/loo hold-out
-evaluation/
-  stats.py           kappa, ICC(2,1), TOST, Bland-Altman, bootstrap (numpy/scipy)
-  evaluate_predictions.py  statistical evaluation CLI (see evaluation/README.md)
-tests/               offline unit tests (no server needed)
+  run_experiment.py / run_context_sweep.py  original Qwen CLIs
+judge_config.py      THE EDITABLE ARTIFACT the outer loop mutates
+judge_program.md     instructions for the agent-driven outer loop
+run_autojudge.py     outer-loop driver: run one round -> results.tsv
+evaluation/          statistical evaluation CLI (kappa, ICC, TOST, ...)
+tests/               offline unit tests, incl. hermetic test_autojudge.py
 ```

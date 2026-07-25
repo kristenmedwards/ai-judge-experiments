@@ -2,9 +2,13 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+car_ai_judges/
 .env
 outputs/
 *.log
+results.tsv
 .DS_Store
 .ipynb_checkpoints/
 data/
+data/car_clip_embeddings.npz
+best_judge_config.json
