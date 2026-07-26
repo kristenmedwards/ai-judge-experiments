@@ -47,10 +47,21 @@ SYSTEM_PERSONA = SYSTEM_RUBRIC + (
     "their personal quirks, leniency, and what they care about."
 )
 
+# Two-stage recipe from rater_matching_guide.md §7: read the car as shared
+# styling first, then convert to the person's numbers. Includes the §5
+# body-style base rates (shared knowledge, identical for every rater).
+SYSTEM_TWO_STAGE = SYSTEM_PERSONA + """
+
+Use this two-step procedure:
+STEP 1 - Read the car (shared): estimate how the AVERAGE viewer scores this car's sporty, luxurious, modern and rugged looks (people largely agree on these; population means: sporty 3.4, luxurious 3.3, modern 4.0, rugged 2.7), and identify its body style. Population base preference by body style: coupe 3.9, convertible 3.6, SUV 3.5, pickup 3.5, sedan 3.3, wagon 2.8, hatchback 2.8, minivan 2.5.
+STEP 2 - Personalize: convert those shared attributes into THIS person's five numbers using their taste (their attribute weights, baseline generosity, scale spread, and any ownership bumps) as described below and as revealed by their example ratings. Rugged is where people differ most; sporty/luxurious/modern perception is mostly shared, so personalize mainly the preference score and the rugged emphasis.
+Reason silently; output ONLY the JSON object."""
+
 SYSTEM_VARIANTS = {
     "default": SYSTEM_RUBRIC,
     "concise": SYSTEM_CONCISE,
     "persona": SYSTEM_PERSONA,
+    "two_stage": SYSTEM_TWO_STAGE,
 }
 
 PERSONALIZATION_NOTE = (
@@ -115,9 +126,13 @@ def build_in_context_messages(exemplars: List[tuple], target_path: str) -> List[
 # config-driven builder used by the harness
 # --------------------------------------------------------------------------- #
 def build_persona_block(profile_text: str = "", q23_text: str = "",
-                        owned_text: str = "") -> str:
-    """Assemble the 'about this person' block from whichever pieces are enabled."""
+                        owned_text: str = "", guide_text: str = "") -> str:
+    """Assemble the 'about this person' block from whichever pieces are enabled.
+    The guide-derived taste card leads: it is interpreted signal (what the raw
+    fields MEAN for prediction), so raw fields follow it as supporting detail."""
     parts = []
+    if guide_text:
+        parts.append(guide_text)
     if profile_text:
         parts.append("About the person you are predicting:\n" + profile_text)
     if owned_text:
@@ -135,6 +150,7 @@ def build_messages(
     profile_text: str = "",
     q23_text: str = "",
     owned_text: str = "",
+    guide_text: str = "",
 ) -> List[dict]:
     """Build a chat request from a JudgeConfig plus already-selected exemplars and
     already-rendered person text. Exemplar/target image parts respect
@@ -144,7 +160,7 @@ def build_messages(
     if exemplars:
         system = system + PERSONALIZATION_NOTE
 
-    persona = build_persona_block(profile_text, q23_text, owned_text)
+    persona = build_persona_block(profile_text, q23_text, owned_text, guide_text)
     if persona:
         system = system + "\n\n" + persona
     if getattr(cfg, "extra_instructions", ""):

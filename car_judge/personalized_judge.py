@@ -13,6 +13,7 @@ from typing import Dict, List, Optional
 
 from . import prompts
 from . import context_selection as ctxsel
+from . import guide_note
 from .client import VLMClient
 from .config import JudgeConfig
 from .long_data import render_profile, render_owned
@@ -66,7 +67,7 @@ class PersonalizedJudge:
         ctx_imgs = self._order(ctx_imgs, seed)
         exemplars = [(self._path(img), rater.ratings[img]) for img in ctx_imgs]
 
-        profile_text = q23_text = owned_text = ""
+        profile_text = q23_text = owned_text = guide_text = ""
         profile = getattr(rater, "profile", {}) or {}
         if cfg.include_demographics:
             profile_text = render_profile(profile, cfg.profile_fields)
@@ -74,10 +75,13 @@ class PersonalizedJudge:
             q23_text = getattr(rater, "q23", "")
         if cfg.include_owned:
             owned_text = render_owned(profile)
+        if getattr(cfg, "include_guide", False):
+            guide_text = guide_note.render_guide_note(profile)
 
         messages = prompts.build_messages(
             cfg, self._path(target), exemplars,
             profile_text=profile_text, q23_text=q23_text, owned_text=owned_text,
+            guide_text=guide_text,
         )
         n_images = prompts.count_images(messages)
         resp = self.client.complete(messages, n_images=n_images)

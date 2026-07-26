@@ -1,0 +1,9 @@
+{
+  "n_context": 12,
+  "context_strategy": "random",
+  "context_order": "as_selected",
+  "prompt_variant": "persona",
+  "temperature": 0.0,
+  "name": "g_card",
+  "include_guide": true
+}

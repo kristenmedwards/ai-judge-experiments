@@ -1,0 +1,25 @@
+{
+  "name": "e5_persona",
+  "n_context": 12,
+  "context_strategy": "random",
+  "context_order": "as_selected",
+  "image_before_text": true,
+  "include_demographics": false,
+  "profile_fields": [
+    "prolific_age",
+    "prolific_sex",
+    "num_children_under18",
+    "driving_location",
+    "driving_frequency",
+    "bfi_openness",
+    "bfi_conscientiousness",
+    "bfi_extraversion",
+    "bfi_agreeableness",
+    "bfi_neuroticism"
+  ],
+  "include_q23": false,
+  "include_owned": false,
+  "prompt_variant": "persona",
+  "extra_instructions": "",
+  "temperature": 0.0
+}

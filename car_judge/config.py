@@ -119,6 +119,8 @@ class JudgeConfig:
     profile_fields: List[str] = field(default_factory=lambda: list(PROFILE_FIELDS_DEFAULT))
     include_q23: bool = False                # the rater's "what I look at" free-text
     include_owned: bool = False              # brands / body styles they own
+    include_guide: bool = False              # guide-derived per-person "taste card"
+                                             # (rater_matching_guide.md via guide_note.py)
 
     # --- prompt wording ---
     prompt_variant: str = "default"          # key into prompts.SYSTEM_VARIANTS
@@ -139,6 +141,8 @@ class JudgeConfig:
             bits.append("q23")
         if self.include_owned:
             bits.append("owned")
+        if self.include_guide:
+            bits.append("guide")
         if self.prompt_variant != "default":
             bits.append(f"prompt={self.prompt_variant}")
         if self.context_order != "as_selected":
