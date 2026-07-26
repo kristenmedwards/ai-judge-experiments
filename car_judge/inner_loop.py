@@ -85,12 +85,19 @@ def run_inner(run_cfg: RunConfig, judge_cfg: JudgeConfig,
     raters = load_long_raters(run_cfg.data_csv, min_cars=1)
     raters = [r for r in raters if passes_attention(r)]
     # Robustness: keep only cars whose image is actually present, then require the
-    # rater still has enough fully-rated cars for the split.
+    # rater still has enough fully-rated cars for the split. Count NON-ANCHOR cars:
+    # make_split excludes anchors from the test/context pool by default, so a rater
+    # with 21 fully-rated cars but 4 anchors has only 17 usable and would crash
+    # make_split at test_size=20 (bit at the full-pool eval; invisible at n=150).
     kept = []
     for r in raters:
         r.ratings = {img: v for img, v in r.ratings.items() if img in image_index}
         r.anchor_images = [a for a in r.anchor_images if a in image_index]
-        if len(r.fully_rated_cars()) >= min_cars:
+        usable = r.fully_rated_cars()
+        if not run_cfg.include_anchors_in_pool:
+            anchors = set(r.anchor_images)
+            usable = [c for c in usable if c not in anchors]
+        if len(usable) >= min_cars:
             kept.append(r)
     raters = kept
     if run_cfg.n_raters:
