@@ -1,0 +1,8 @@
+judge_A,judge_B,dMAE_A_minus_B,ci95_lo,ci95_hi,wilcoxon_p_maxseed
+b_nocontext,pop_mean,-0.09434,-0.11202,-0.07662,4.94e-92
+b_persona,pop_mean,-0.40371,-0.42556,-0.38216,0.00e+00
+car_mean,pop_mean,-0.2546,-0.26566,-0.24357,0.00e+00
+b_persona,b_nocontext,-0.30937,-0.3298,-0.28981,0.00e+00
+b_persona,car_mean,-0.14912,-0.1689,-0.12998,0.00e+00
+g_card_twostage,b_persona,-0.00547,-0.01044,-0.00065,3.16e-03
+g_card_twostage,pop_mean,-0.40918,-0.43084,-0.38867,0.00e+00

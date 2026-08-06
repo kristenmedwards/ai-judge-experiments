@@ -1,0 +1,35 @@
+{
+  "inputs": {
+    "fp_runs": {
+      "b_persona_s0": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260726_062750_fp_b_persona_s0\\per_experiment\\b_persona.csv",
+      "b_persona_s1": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260726_111315_fp_b_persona_s1\\per_experiment\\b_persona.csv",
+      "b_nocontext_s0": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260726_163734_fp_b_nocontext_s0\\per_experiment\\b_nocontext.csv",
+      "b_nocontext_s1": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260726_171532_fp_b_nocontext_s1\\per_experiment\\b_nocontext.csv",
+      "b_nocontext_s2": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260802_111042_fp_b_nocontext_s2\\per_experiment\\b_nocontext.csv"
+    },
+    "ctx20_runs": {
+      "s0": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260801_141711_ctx20_full\\per_experiment\\ctx20_s0.csv",
+      "s1": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260801_190941_ctx20_full\\per_experiment\\ctx20_s1.csv",
+      "s2": "C:\\Users\\krist\\Claude_AI_Judges\\ai_judge_experiments\\outputs\\runs\\20260801_190941_ctx20_full\\per_experiment\\ctx20_s2.csv"
+    },
+    "human_csv": "C:\\Users\\krist\\Claude_AI_Judges\\car_ratings_long_July8_July22_merged_with_color_and_Q23.csv",
+    "metric_code": "evaluation/stats.py"
+  },
+  "design_note": "ctx20 = 666 raters x 14 held-out cars, anchors in pool, persona prompt, N=20 random context, seeds 0-2. fp = 672 raters x 20 cars. Metrics-table baselines are on ctx20 cells; fp-internal tests use fp-cell baselines; ctx20 vs b_nocontext is paired on strict per-seed cell intersections (anchor cells excluded by construction).",
+  "options": {
+    "car_mean_mode": "loo",
+    "car_mean_loo_fallback_cells_to_pop_mean": 0,
+    "bootstrap": 2000
+  },
+  "population_means": {
+    "sporty": 3.4103,
+    "luxurious": 3.3103,
+    "modern": 3.9606,
+    "rugged": 2.6717,
+    "preference": 3.3046
+  },
+  "reproduction_check": {
+    "checked": false,
+    "reason": "run with --check"
+  }
+}

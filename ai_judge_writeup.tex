@@ -1,0 +1,153 @@
+% =====================================================================
+%  ADD-ON TEXT for "Building Personalized AI Judges"
+%  All numbers seed-averaged; sweep = 30 raters x 14 held-out x 5 dims x 3 seeds
+%  (run 20260731_134005_ctxsweep); full pool = 666 raters x 14 x 5 x 3 seeds
+%  (report_ctx20/). car_mean baseline is leave-one-out.
+% =====================================================================
+
+% ---- (Replace / augment the existing methodology paragraph) ----
+We evaluated OpenAI's GPT-5.6 Sol reasoning model (\texttt{gpt-5.6-sol}) through
+the Responses API, using standard reasoning mode at medium reasoning effort; all
+experiments were run in July--August 2026. To isolate the effect of context, we
+swept the number of in-context exemplars over $N \in \{0, 4, 8, 12, 16, 20\}$
+while holding every other lever fixed (a persona-style system prompt, exemplars
+drawn uniformly at random from the rater's own remaining vehicles, and image-before-text
+demonstration ordering). For each rater we reserved a fixed test set of $14$
+vehicles from the $34$ they rated; the same held-out set was used at every context
+size, so any two configurations are directly comparable cell-for-cell. Because the
+deepest configuration ($N{=}20$) requires each rater to supply $20$ exemplars in
+addition to the $14$ test vehicles, we admitted a vehicle's four shared anchor
+ratings into the exemplar pool and retained only raters with enough densely rated
+vehicles to satisfy the largest context size. We report mean absolute error (MAE),
+signed bias (the mean of predicted minus human rating), single-rater absolute-agreement
+ICC$(2,1)$, and Spearman's rank correlation $\rho$, all against each rater's own
+held-out ratings. Owing to the cost of the reasoning model, the sweep used $30$
+raters ($30 \times 14 \times 5 = 2{,}100$ evaluation cells per seed); pooling three
+seeds gives $6{,}300$ paired cells clustered within $30$ raters. Having identified
+$N{=}20$ as the strongest configuration, we re-ran it on the full eligible pool of
+$666$ raters ($46{,}620$ cells per seed; ${\sim}140{,}000$ pooled over three seeds)
+to obtain stable per-dimension estimates and to compare it against three
+reference predictors: a \emph{population-mean} baseline (predict each dimension's
+grand mean), a leave-one-out \emph{per-vehicle mean} baseline (predict the mean
+rating other raters gave that vehicle), and the \emph{zero-shot} judge ($N{=}0$).
+
+% =====================================================================
+\subsubsection{Context Reduces Error, Corrects Calibration, and Improves Agreement}
+\label{sec:res-contextsweep}
+Adding context monotonically improved every metric, with the largest gains
+concentrated in the first few exemplars (\Cref{fig:ch5_contextvsmae,fig:ch5_contextvsagreement}).
+Overall MAE fell from $1.15$ at zero-shot to $1.01$ with only $N{=}4$ exemplars---a
+$12\%$ reduction from a handful of examples---and continued to $0.93$ ($N{=}8$),
+$0.88$ ($N{=}12$), $0.86$ ($N{=}16$), and $0.84$ ($N{=}20$). The marginal benefit
+diminished past $N{=}12$ (each further step lowered MAE by only ${\sim}0.02$), but
+$N{=}20$ remained the best configuration on \emph{every} metric, and we adopt it as
+our judge. Agreement rose in tandem: ICC$(2,1)$ climbed from $0.44$ to $0.67$ and
+Spearman $\rho$ from $0.46$ to $0.67$ over the same range, moving the judge from
+weak into substantial agreement with individual raters.
+
+The most striking effect of context is on \emph{calibration} rather than raw error
+(\Cref{fig:ch5_contextvsbias}). At zero-shot the judge is systematically
+miscalibrated, and the miscalibration is not uniform across dimensions. The model
+\emph{over}-predicts every attribute and, especially, overall preference
+(bias $+0.85$: it assumes people like the vehicles far more than they do), while
+ruggedness is the \emph{only} dimension it \emph{under}-predicts (bias $-0.17$).
+The remaining attributes sit in between (sporty $+0.18$, modern $+0.22$,
+luxurious $+0.31$). Providing even a small amount of the rater's own context
+collapses this bias almost entirely: by $N{=}4$ the overall absolute bias drops from
+$0.28$ to $0.08$, the preference bias falls from $+0.85$ to $+0.23$, and
+luxuriousness is nearly eliminated ($+0.31 \rightarrow +0.02$). In other words, the
+exemplars teach the model \emph{where the person's scale sits}---their leniency and
+per-attribute tendencies---which a generic zero-shot prompt cannot infer. Notably,
+ruggedness remains the lone (slightly) negatively biased dimension at all context
+sizes, foreshadowing its distinct behavior discussed below.
+
+% =====================================================================
+\subsubsection{The $N{=}20$ Judge Substantially Outperforms Non-Personalized Baselines}
+\label{sec:res-ctx20}
+On the full pool of $666$ raters, the $N{=}20$ judge attains an overall MAE of
+$0.80$, ICC$(2,1)$ of $0.70$, and Spearman $\rho$ of $0.70$
+(\Cref{fig:3seed_overall}), i.e. it reproduces an individual's held-out ratings
+within roughly $0.8$ points on a $1$--$6$ scale and orders that person's vehicles
+in substantial agreement with them. This markedly exceeds all three non-personalized
+references (\Cref{tab:ctx20-improvement}). Relative to the population-mean baseline,
+the judge reduces MAE by $37\%$ while lifting agreement from essentially no ranking
+ability (ICC $0.13$, $\rho$ $0.24$) to substantial agreement (ICC $0.70$, $\rho$
+$0.70$). It also improves on the far stronger per-vehicle-mean baseline---which
+already encodes crowd consensus for each vehicle---by $27\%$ in MAE and by $56\%$
+and $37\%$ in ICC and $\rho$ respectively, confirming that the personalized judge
+captures individual taste that a consensus predictor cannot. Against the zero-shot
+judge, personalization lowers MAE by $31\%$ and raises ICC by $63\%$. Every
+comparison is significant under a rater-clustered bootstrap ($p < 0.001$).
+
+\begin{table}[htbp]
+\centering
+\caption{Overall performance of the $N{=}20$ personalized judge and its
+improvement over each non-personalized baseline (full pool, $666$ raters,
+seed-averaged over three seeds). MAE improvement is a percent \emph{reduction};
+ICC and $\rho$ improvements are percent \emph{increases}. The per-vehicle-mean
+baseline is leave-one-out.}
+\label{tab:ctx20-improvement}
+\begin{tabular}{lccc}
+\hline
+ & MAE $\downarrow$ & ICC$(2,1)$ $\uparrow$ & Spearman $\rho$ $\uparrow$ \\
+\hline
+Population mean (constant)      & $1.267$ & $0.128$ & $0.243$ \\
+Per-vehicle mean (leave-one-out)& $1.090$ & $0.447$ & $0.510$ \\
+Zero-shot ($N{=}0$)             & $1.161$ & $0.427$ & $0.448$ \\
+\textbf{Personalized judge ($N{=}20$)} & $\mathbf{0.797}$ & $\mathbf{0.698}$ & $\mathbf{0.697}$ \\
+\hline
+Improvement vs.\ population mean & $-37\%$ & $+446\%$ & $+187\%$ \\
+Improvement vs.\ per-vehicle mean& $-27\%$ & $+56\%$  & $+37\%$  \\
+Improvement vs.\ zero-shot       & $-31\%$ & $+63\%$  & $+55\%$  \\
+\hline
+\end{tabular}
+\vspace{0.4em}
+\begin{minipage}{\linewidth}
+\footnotesize
+\textit{Note}. Population-mean and per-vehicle-mean baselines are computed on the
+identical held-out cells as the judge. The zero-shot values are from the matched
+$N{=}0$ condition. The population-mean ICC/$\rho$ are near zero because a constant
+predictor cannot rank vehicles \emph{within} a dimension; the large percentage
+gains against it are therefore a change in kind (no ranking ability to substantial
+agreement) more than a proportional improvement.
+\end{minipage}
+\end{table}
+
+Performance varied by dimension (\Cref{fig:3seed_mae,fig:3seed_icc,fig:3seed_spearman}).
+At $N{=}20$ the judge predicted ruggedness best (MAE $0.63$, ICC $0.78$) and overall
+preference worst (MAE $0.87$--$0.94$, ICC $0.57$--$0.62$), with the three remaining
+attributes in between. This ordering mirrors the human interrater reliability
+reported in \Cref{sec:res-reliability}: the dimensions on which people agree most
+are also the dimensions the judge predicts most reliably, and the holistic,
+taste-driven preference judgment is hardest for both humans and model.
+
+% =====================================================================
+\subsection{The Distinct Behavior of Ruggedness}
+\label{sec:disc-rugged-judge}
+Ruggedness is anomalous across the judge experiments in a way that is consistent
+with its anomalous behavior in the human data (\Cref{sec:res-reliability,fig:corr}).
+Three observations stand out. First, as noted above, it is the single dimension the
+zero-shot judge under-predicts: whereas the model reflexively inflates preference
+and the other attributes, it \emph{under}-calls ruggedness, consistent with rugged
+styling being a low-base-rate, minority aesthetic (\Cref{fig:dist}) that a
+context-free model does not expect. Second, and most notably, ruggedness is the
+best-agreed dimension at \emph{every} context size: its ICC is already $0.61$ at
+zero-shot---when every other dimension sits between $0.18$ and $0.37$---and it rises
+to $\approx 0.78$--$0.80$ by $N{=}20$, the highest of any dimension.
+
+This produces an instructive dissociation between error and agreement. Absolute
+error (MAE) and rank agreement (ICC/$\rho$) measure different things: MAE penalizes
+calibration offsets, whereas ICC and $\rho$ reward getting the \emph{ordering} of a
+person's vehicles right. Ruggedness scores well on agreement long before its error
+is competitive because ruggedness is visually the most separable attribute---high
+ground clearance, body cladding, and an upright stance make a vehicle
+unambiguously rugged or not---so the model orders vehicles along this axis
+easily even at zero-shot, and only needs context to correct its \emph{absolute}
+level (the negative bias). Preference is the mirror image: it is the most holistic
+and idiosyncratic judgment, so it carries both the largest zero-shot bias
+($+0.85$) and the weakest agreement, and it benefits the most, proportionally,
+from seeing how a particular person actually scores vehicles. That the judge ends
+up predicting the crowd's most-agreed dimension (ruggedness) most reliably, and its
+most-contested dimension (preference) least reliably, indicates that the judge is
+recovering the same structure present in the human ratings rather than an artifact
+of the model.

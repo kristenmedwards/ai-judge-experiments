@@ -1,5 +1,5 @@
 {
-  "name": "recommended_e5_persona",
+  "name": "recommended_b_persona",
   "n_context": 12,
   "context_strategy": "random",
   "context_order": "as_selected",

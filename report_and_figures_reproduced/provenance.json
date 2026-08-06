@@ -1,0 +1,79 @@
+{
+  "inputs": {
+    "runs_root": "/tmp/repo/outputs/runs",
+    "runs": {
+      "b_persona_s0": "/tmp/repo/outputs/runs/20260726_062750_fp_b_persona_s0/per_experiment/b_persona.csv",
+      "g_card_twostage_s0": "/tmp/repo/outputs/runs/20260726_085911_fp_g_card_twostage_s0/per_experiment/g_card_twostage.csv",
+      "b_persona_s1": "/tmp/repo/outputs/runs/20260726_111315_fp_b_persona_s1/per_experiment/b_persona.csv",
+      "g_card_twostage_s1": "/tmp/repo/outputs/runs/20260726_133825_fp_g_card_twostage_s1/per_experiment/g_card_twostage.csv",
+      "b_nocontext_s0": "/tmp/repo/outputs/runs/20260726_163734_fp_b_nocontext_s0/per_experiment/b_nocontext.csv",
+      "b_nocontext_s1": "/tmp/repo/outputs/runs/20260726_171532_fp_b_nocontext_s1/per_experiment/b_nocontext.csv"
+    },
+    "human_csv": "/tmp/car_ratings_long_July8_July22_merged_with_color_and_Q23.csv",
+    "metric_code": "evaluation/stats.py"
+  },
+  "options": {
+    "car_mean_mode": "loo",
+    "car_mean_loo_fallback_cells_to_pop_mean": 0,
+    "seeds": [
+      0,
+      1
+    ],
+    "bootstrap": 2000
+  },
+  "population_means": {
+    "sporty": 3.4103,
+    "luxurious": 3.3103,
+    "modern": 3.9606,
+    "rugged": 2.6717,
+    "preference": 3.3046
+  },
+  "reproduction_check_vs_results_tsv": {
+    "checked": true,
+    "all_match": true,
+    "rows": [
+      {
+        "judge": "b_persona",
+        "seed": 0,
+        "recomputed": 0.85314,
+        "results_tsv": 0.85314,
+        "abs_diff": 1.2e-07
+      },
+      {
+        "judge": "g_card_twostage",
+        "seed": 0,
+        "recomputed": 0.847783,
+        "results_tsv": 0.847783,
+        "abs_diff": 2.6e-07
+      },
+      {
+        "judge": "b_nocontext",
+        "seed": 0,
+        "recomputed": 1.160863,
+        "results_tsv": 1.160863,
+        "abs_diff": 1e-07
+      },
+      {
+        "judge": "b_persona",
+        "seed": 1,
+        "recomputed": 0.850372,
+        "results_tsv": 0.850372,
+        "abs_diff": 2e-08
+      },
+      {
+        "judge": "g_card_twostage",
+        "seed": 1,
+        "recomputed": 0.844792,
+        "results_tsv": 0.844792,
+        "abs_diff": 3.3e-07
+      },
+      {
+        "judge": "b_nocontext",
+        "seed": 1,
+        "recomputed": 1.161384,
+        "results_tsv": 1.161384,
+        "abs_diff": 7e-08
+      }
+    ]
+  }
+}

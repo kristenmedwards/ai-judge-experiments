@@ -1,0 +1,8 @@
+{
+  "name": "b_nocontext",
+  "n_context": 0,
+  "context_strategy": "random",
+  "context_order": "as_selected",
+  "prompt_variant": "default",
+  "temperature": 0.0
+}

@@ -42,6 +42,26 @@ RESULTS_TSV = "results.tsv"
 RESULTS_HEADER = ["timestamp", "commit", "name", "config", "score_mae",
                   "within1", "n_raters", "n_preds", "unparsed", "status", "note"]
 
+# --- per-run output namespacing -------------------------------------------- #
+# Every sweep/run writes its artifacts under outputs/runs/<run_id>/ so nothing
+# from a previous run is ever overwritten. The top-level results.tsv stays a
+# single append-only master log (each row's `note` carries the run_id).
+RUNS_ROOT = os.path.join("outputs", "runs")
+
+
+def make_run_id(tag: Optional[str] = None) -> str:
+    """A unique id for one run: local timestamp, plus an optional --run-tag."""
+    stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    tag = (tag or "").strip().replace(os.sep, "-").replace(" ", "-")
+    return f"{stamp}_{tag}" if tag else stamp
+
+
+def run_dir_for(run_id: str) -> str:
+    """Create and return outputs/runs/<run_id>/ (with its per_experiment/ subdir)."""
+    d = os.path.join(RUNS_ROOT, run_id)
+    os.makedirs(os.path.join(d, "per_experiment"), exist_ok=True)
+    return d
+
 
 def load_judge_config(path: Optional[str]) -> JudgeConfig:
     """Load a JudgeConfig from judge_config.py (default) or a .json / .py file."""
@@ -92,6 +112,72 @@ def write_predictions(rows, path: str) -> None:
         w.writerows(rows)
 
 
+# --- richer metric suite (beyond MAE) -------------------------------------- #
+# MAE stays the primary optimization target (inner_loop.py, untouched). This is
+# ADDITIONAL reporting: ICC(2,1), Spearman rho, quadratic-weighted kappa and RMSE
+# — computed with the SAME functions the paper's evaluation module uses
+# (evaluation/stats.py), so numbers are directly comparable. Correlation metrics
+# are far less sensitive than MAE to which held-out cars a seed happened to draw,
+# so they compare more cleanly across seeds.
+def compute_extra_metrics(rows) -> dict:
+    """Per-dimension + pooled ICC/Spearman/kappa/RMSE from per-cell prediction rows.
+
+    Returns {} if numpy/scipy or evaluation.stats are unavailable (never fatal)."""
+    try:
+        import numpy as np
+        from evaluation import stats as st
+    except Exception:
+        return {}
+    graded = [r for r in rows if r.get("predicted") is not None
+              and r.get("true") is not None]
+    if not graded:
+        return {}
+
+    def suite(sub):
+        t = np.array([r["true"] for r in sub], dtype=float)
+        p = np.array([r["predicted"] for r in sub], dtype=float)
+        rho, _ = st.spearman(t, p)
+        return {
+            "n": int(len(sub)), "mae": st.mae(t, p), "rmse": st.rmse(t, p),
+            "within1": st.within_k(t, p, 1), "icc2_1": st.icc2_1(np.column_stack([t, p])),
+            "spearman_rho": rho,
+            "weighted_kappa": st.quadratic_weighted_kappa(t, p),
+        }
+
+    dims = sorted({r["dimension"] for r in graded})
+    per_dim = {d: suite([r for r in graded if r["dimension"] == d]) for d in dims}
+
+    # within-rater mean Spearman: does the judge rank each PERSON'S own cars like
+    # they do? (the personalization-quality metric MAE can't see)
+    import numpy as np
+    per_rater_rho = []
+    raters = {}
+    for r in graded:
+        raters.setdefault(r["rater"], []).append(r)
+    for rid, rs in raters.items():
+        t = np.array([r["true"] for r in rs], dtype=float)
+        p = np.array([r["predicted"] for r in rs], dtype=float)
+        rho, _ = st.spearman(t, p)
+        if rho == rho:  # not nan
+            per_rater_rho.append(rho)
+    wr = float(np.mean(per_rater_rho)) if per_rater_rho else float("nan")
+
+    out = suite(graded)                       # pooled over all cells
+    out["within_rater_spearman"] = wr
+    out["per_dimension"] = per_dim
+    return out
+
+
+def _fmt_extra(xm: dict) -> str:
+    if not xm:
+        return ""
+    return (f"ICC={xm.get('icc2_1', float('nan')):.3f} "
+            f"rho={xm.get('spearman_rho', float('nan')):.3f} "
+            f"wkappa={xm.get('weighted_kappa', float('nan')):.3f} "
+            f"rmse={xm.get('rmse', float('nan')):.3f} "
+            f"inRaterRho={xm.get('within_rater_spearman', float('nan')):.3f}")
+
+
 def parse_args(argv):
     p = argparse.ArgumentParser(description="Run one personalized-judge experiment round.")
     p.add_argument("--data", required=True, help="merged long csv (…_with_color_and_Q23.csv)")
@@ -105,6 +191,9 @@ def parse_args(argv):
     p.add_argument("--temperature", type=float, default=0.0)
     p.add_argument("--max-tokens", type=int, default=512)
     p.add_argument("--concurrency", type=int, default=4)
+    p.add_argument("--max-retries", type=int, default=4,
+                   help="per-call API retries; raise for long unattended runs "
+                        "so one transient burst can't kill a 3000-call round")
 
     # experiment plumbing
     p.add_argument("--raters", type=int, default=5)
@@ -118,6 +207,10 @@ def parse_args(argv):
     p.add_argument("--out", default=None, help="predictions csv (default outputs/<name>.csv)")
     p.add_argument("--note", default="", help="free-text note for results.tsv")
     p.add_argument("--no-log", action="store_true", help="don't append to results.tsv")
+    p.add_argument("--run-tag", default=None,
+                   help="if set, write this round under outputs/runs/<ts>_<tag>/ "
+                        "(nothing in outputs/ is overwritten) and stamp the run id "
+                        "into the results.tsv note")
     return p.parse_args(argv)
 
 
@@ -131,6 +224,7 @@ def main(argv=None) -> int:
         base_url=creds.base_url, api_key=creds.api_key, model=creds.model,
         temperature=judge_cfg.temperature or a.temperature,
         max_tokens=a.max_tokens, max_concurrency=a.concurrency,
+        max_retries=a.max_retries,
         n_raters=a.raters, test_size=a.test_size, split_seed=a.split_seed,
         min_cars=a.min_cars, dry_run=a.dry_run, mock=a.mock,
     )
@@ -141,12 +235,33 @@ def main(argv=None) -> int:
 
     result = run_inner(run_cfg, judge_cfg)
 
-    out = a.out or os.path.join("outputs", f"pred_{judge_cfg.name}.csv")
+    # Optional per-run namespacing: --run-tag routes outputs under
+    # outputs/runs/<run_id>/ so a re-run never clobbers a previous round.
+    run_id = make_run_id(a.run_tag) if a.run_tag is not None else None
+    run_dir = run_dir_for(run_id) if run_id else None
+    default_pred = (os.path.join(run_dir, "per_experiment", f"{judge_cfg.name}.csv")
+                    if run_dir else os.path.join("outputs", f"pred_{judge_cfg.name}.csv"))
+    out = a.out or default_pred
     write_predictions(result.rows, out)
     print(f"[save] {len(result.rows)} prediction rows -> {out}")
 
+    # richer metric suite (MAE is still the primary target; these are extra views)
+    xm = compute_extra_metrics(result.rows) if not a.dry_run else {}
+    if xm:
+        print(f"[eval] MAE={result.score:.4f} {_fmt_extra(xm)}")
+        metrics_path = os.path.splitext(out)[0] + ".metrics.json"
+        with open(metrics_path, "w", encoding="utf-8") as fh:
+            json.dump({"name": judge_cfg.name, "split_seed": a.split_seed,
+                       "macro_mae": result.score, **xm}, fh, indent=2)
+        print(f"[eval] full metric suite -> {metrics_path}")
+
     if not a.no_log and not a.dry_run:
-        append_results_row({
+        note = a.note or judge_cfg.summary()
+        if xm:
+            note = f"{note} · {_fmt_extra(xm)}"
+        if run_id:
+            note = f"[run={run_id}] {note}"
+        row = {
             "timestamp": _dt.datetime.now().isoformat(timespec="seconds"),
             "commit": git_commit_short(),
             "name": judge_cfg.name,
@@ -157,8 +272,11 @@ def main(argv=None) -> int:
             "n_preds": result.n_predictions,
             "unparsed": result.n_unparsed,
             "status": "pending",   # you set keep/discard after comparing to best
-            "note": a.note or judge_cfg.summary(),
-        })
+            "note": note,
+        }
+        append_results_row(row)                       # append-only master log
+        if run_dir:                                   # + a per-run copy
+            append_results_row(row, path=os.path.join(run_dir, "results.tsv"))
         print(f"[log ] appended to {RESULTS_TSV} (set status keep/discard yourself).")
         print("[next] compare score_mae to the best so far; if lower, `git commit` "
               "the judge_config.py change (keep); else `git checkout judge_config.py` (revert).")

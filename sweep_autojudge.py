@@ -37,12 +37,15 @@ from typing import List, Optional, Tuple
 from car_judge import env as envmod
 from car_judge.config import RunConfig, JudgeConfig
 from car_judge.inner_loop import run_inner, InnerResult
-from run_autojudge import append_results_row, write_predictions, git_commit_short
+from run_autojudge import (append_results_row, write_predictions,
+                           git_commit_short, make_run_id, run_dir_for,
+                           compute_extra_metrics, _fmt_extra)
 
 
 class Sweeper:
     def __init__(self, run_cfg: RunConfig, target_mae: float,
-                 max_experiments: int, keep_going: bool, log: bool = True):
+                 max_experiments: int, keep_going: bool, log: bool = True,
+                 run_dir: str = "outputs", run_id: str = ""):
         self.rc = run_cfg
         self.target = target_mae
         self.max_experiments = max_experiments
@@ -50,6 +53,10 @@ class Sweeper:
         self.log = log
         self.n = 0
         self.best: Optional[Tuple[JudgeConfig, InnerResult]] = None
+        # per-run output namespacing (nothing from a previous run is overwritten)
+        self.run_dir = run_dir
+        self.run_id = run_id
+        self.per_run_tsv = os.path.join(run_dir, "results.tsv")
 
     # --- evaluate one config, log it, update best, return (result, is_new_best) ---
     def evaluate(self, jc: JudgeConfig) -> Tuple[Optional[InnerResult], bool]:
@@ -63,8 +70,12 @@ class Sweeper:
         is_best = self.best is None or res.score < self.best[1].score - 1e-9
         if is_best:
             self.best = (jc, res)
+        # richer metric suite beyond MAE (ICC / Spearman / kappa / RMSE)
+        xm = compute_extra_metrics(res.rows)
         if self.log:
-            append_results_row({
+            tag = f"[run={self.run_id}] " if self.run_id else ""
+            extra = f" · {_fmt_extra(xm)}" if xm else ""
+            row = {
                 "timestamp": _dt.datetime.now().isoformat(timespec="seconds"),
                 "commit": git_commit_short(),
                 "name": jc.name,
@@ -74,10 +85,25 @@ class Sweeper:
                 "n_raters": res.n_raters, "n_preds": res.n_predictions,
                 "unparsed": res.n_unparsed,
                 "status": "keep" if is_best else "discard",
-                "note": f"sweep · {jc.summary()}",
-            })
-        print(f"      MAE={res.score:.4f}  (best so far {self.best[1].score:.4f} "
-              f"by '{self.best[0].name}')")
+                "note": f"{tag}sweep · {jc.summary()}{extra}",
+            }
+            append_results_row(row)                       # append-only master log
+            append_results_row(row, path=self.per_run_tsv)  # + this run's own log
+        # Keep EVERY experiment's per-prediction rows, not just the final best.
+        # The configs differ by ~0.015 MAE, which is within measurement noise, so
+        # deciding keep/discard needs a paired test across configs — impossible if
+        # the losers' per-item errors are thrown away. Namespaced by run so a
+        # re-run never overwrites a previous run's exp files.
+        exp_csv = os.path.join(self.run_dir, "per_experiment",
+                               f"exp{self.n:02d}_{jc.name}.csv")
+        write_predictions(res.rows, exp_csv)
+        if xm:  # full per-experiment metric suite alongside the predictions
+            with open(os.path.splitext(exp_csv)[0] + ".metrics.json", "w",
+                      encoding="utf-8") as fh:
+                json.dump({"name": jc.name, "split_seed": self.rc.split_seed,
+                           "macro_mae": res.score, **xm}, fh, indent=2)
+        print(f"      MAE={res.score:.4f}  {_fmt_extra(xm)}  "
+              f"(best so far {self.best[1].score:.4f} by '{self.best[0].name}')")
         return res, is_best
 
     def hit_target(self) -> bool:
@@ -185,6 +211,9 @@ def parse_args(argv):
                    help="hard safety cap so the sweep can't run/spend forever")
     p.add_argument("--keep-going", action="store_true",
                    help="after the ladder, try randomized combos until target/cap")
+    p.add_argument("--run-tag", default=None,
+                   help="optional label appended to the run id "
+                        "(outputs/runs/<timestamp>_<tag>/)")
     p.add_argument("--mock", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--no-log", action="store_true")
@@ -206,11 +235,29 @@ def main(argv=None) -> int:
         return 2
 
     est = a.raters * a.test_size
+    # Isolate this run's outputs under outputs/runs/<run_id>/ so nothing from a
+    # previous sweep is overwritten.
+    run_id = make_run_id(a.run_tag)
+    run_dir = run_dir_for(run_id)
     print(f"[sweep] target MAE < {a.target_mae} · cap {a.max_experiments} experiments · "
           f"~{est} model calls/experiment ({'MOCK' if a.mock else 'LIVE'})")
+    print(f"[sweep] run id: {run_id}   ->   {run_dir}/")
+
+    # provenance: record exactly how this run was launched (never a secret)
+    meta = {
+        "run_id": run_id, "commit": git_commit_short(),
+        "started": _dt.datetime.now().isoformat(timespec="seconds"),
+        "data": a.data, "image_root": a.image_root,
+        "raters": a.raters, "test_size": a.test_size, "split_seed": a.split_seed,
+        "context_sizes": a.context_sizes, "target_mae": a.target_mae,
+        "max_experiments": a.max_experiments, "keep_going": a.keep_going,
+        "mock": a.mock, "dry_run": a.dry_run, "model": creds.model,
+    }
+    with open(os.path.join(run_dir, "sweep_meta.json"), "w", encoding="utf-8") as fh:
+        json.dump(meta, fh, indent=2)
 
     sw = Sweeper(run_cfg, a.target_mae, a.max_experiments, a.keep_going,
-                 log=not a.no_log)
+                 log=not a.no_log, run_dir=run_dir, run_id=run_id)
     sw.run_ladder(a.context_sizes)
     if a.keep_going and not sw.hit_target():
         print("\n[sweep] ladder exhausted without hitting target; randomized search…")
@@ -229,11 +276,15 @@ def main(argv=None) -> int:
     print(f"[sweep] best judge: {jc.name}  ({jc.summary()})")
     print(f"[sweep] per-dimension MAE: " +
           " ".join(f"{d}={v:.3f}" for d, v in res.per_dimension_mae.items()))
-    write_predictions(res.rows, os.path.join("outputs", f"best_{jc.name}.csv"))
-    with open("best_judge_config.json", "w", encoding="utf-8") as fh:
+    # Winner artifacts go INTO this run's folder — the top-level
+    # best_judge_config.json (a prior run's record) is left untouched.
+    write_predictions(res.rows, os.path.join(run_dir, f"best_{jc.name}.csv"))
+    best_cfg_path = os.path.join(run_dir, "best_judge_config.json")
+    with open(best_cfg_path, "w", encoding="utf-8") as fh:
         json.dump(jc.to_dict(), fh, indent=2)
-    print(f"[sweep] wrote best_judge_config.json + outputs/best_{jc.name}.csv; "
-          f"full log in results.tsv")
+    print(f"[sweep] wrote {best_cfg_path} + {run_dir}/best_{jc.name}.csv")
+    print(f"[sweep] this run's log: {os.path.join(run_dir, 'results.tsv')} · "
+          f"master log: results.tsv")
     return 0
 
 
